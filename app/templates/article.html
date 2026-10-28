@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}{{ data.article.title if data else slug }} — MedPrep Compass{% endblock %}
+{% block content %}
+<p><a href="/">&larr; New draft</a></p>
+
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+
+{% if not data %}
+  <p class="notice">This draft was made on the command line, so only its raw Markdown is shown.</p>
+  <p><a class="button" href="/articles/{{ slug }}/download">Download Markdown</a>
+     <a class="button" href="/articles/{{ slug }}/download.pdf">Download PDF</a></p>
+  <div class="card body">{{ raw_markdown }}</div>
+{% else %}
+  {% set a = data.article %}{% set s = data.seo %}{% set m = data.metrics %}{% set q = quality %}
+  {% set sec = q.sections %}
+
+  <h1>{{ a.title }}</h1>
+  <p class="notice">{{ a.notice }}</p>
+
+  <div class="card">
+    <h2>Status: {{ q.status.label }}</h2>
+    <ol class="steps">
+      {% for key, reached in q.status.reached.items() %}
+      <li class="{{ 'ok' if reached else 'muted' }}">{{ key.replace('_', ' ')|capitalize }}{{ ' ✓' if reached else '' }}</li>
+      {% endfor %}
+    </ol>
+    <p><small>Run ID <code>{{ data.run_id }}</code> · revision {{ data.revision }}
+      {% if data.parent_slug %}· revised from <a href="/articles/{{ data.parent_slug }}">{{ data.parent_slug }}</a>{% endif %}
+      · created {{ data.created_utc }}</small></p>
+    {% if data.legacy %}<p class="notice">This draft was created by an earlier version of the app. It can be viewed and exported, but its report cannot be tied to the file, and it cannot be approved.</p>{% endif %}
+    {% if problems %}
+      <div class="error"><strong>Consistency problems:</strong>
+        <ul>{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if revisions|length > 1 %}
+      <p>Revisions: {% for r in revisions %}
+        {% if r.slug == slug %}<strong>r{{ r.revision }}</strong>{% else %}<a href="/articles/{{ r.slug }}">r{{ r.revision }}</a>{% endif %}{% if not loop.last %} · {% endif %}
+      {% endfor %}</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Export</h2>
+    {% if sec.export_readiness.blockers %}
+      <p class="error">Export is blocked: {{ sec.export_readiness.blockers|join(' ') }}</p>
+      <p>The model's reply was saved so you can see what it returned, but an unfinished article cannot be exported. Nothing was retried automatically.</p>
+      <p><a class="button" href="/?topic={{ m.topic|urlencode }}&keyword={{ m.keyword|urlencode }}&length={{ data.length }}">Start a new draft with the same topic</a>
+         <small>(this sends a new paid request only when you press Generate)</small></p>
+    {% else %}
+      <p><a class="button" href="/articles/{{ slug }}/download">Download Markdown</a>
+         <a class="button" href="/articles/{{ slug }}/download.pdf">Download PDF</a></p>
+      {% for w in sec.export_readiness.warnings %}<p class="warn">Before you rely on this file: {{ w }}</p>{% endfor %}
+    {% endif %}
+    <p><small>Both files contain this exact revision. Neither one publishes anything.</small></p>
+  </div>
+
+  <div class="card">
+    <h2>Details</h2>
+    <table>
+      <tr><th>Meta description</th><td>{{ a.meta_description }} <small>({{ a.meta_description|length }} characters)</small></td></tr>
+      <tr><th>Target keyword</th><td>{{ a.keyword }}</td></tr>
+      {% if a.search_intent %}<tr><th>Search intent</th><td>{{ a.search_intent }}</td></tr>{% endif %}
+      {% if a.audience %}<tr><th>Audience</th><td>{{ a.audience }}</td></tr>{% endif %}
+      <tr><th>Headings</th><td>{% for h, _ in a.sections %}{{ h }}{% if not loop.last %} &middot; {% endif %}{% endfor %}</td></tr>
+      <tr><th>Word count</th><td>about {{ s.word_count }}</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Run details</h2>
+    <table>
+      <tr><th>Provider</th><td>{{ m.provider }}</td></tr>
+      <tr><th>Model</th><td>{{ m.model or "none (mock)" }}</td></tr>
+      <tr><th>Token usage</th><td>
+        {% if m.usage_source == "actual" %}ACTUAL (from the API): input {{ m.input_tokens }}, output {{ m.output_tokens }}{% if m.reasoning_tokens %} (reasoning {{ m.reasoning_tokens }}){% endif %}
+        {% elif m.usage_source == "estimated" %}ESTIMATE only (not API-reported): input {{ m.input_tokens }}, output {{ m.output_tokens }}
+        {% else %}Unavailable (the API did not report usage){% endif %}
+        {% if m.cached_input_tokens %}, cached input {{ m.cached_input_tokens }}{% endif %}</td></tr>
+      <tr><th>Model calls</th><td>{{ m.model_calls }}{% if m.continuation_calls %} (including {{ m.continuation_calls }} follow-up request to write sections the first reply left out){% endif %}</td></tr>
+      {% if m.finish_reasons %}<tr><th>Finish reasons</th><td>{{ m.finish_reasons|map('string')|join(', ') }} <small>(stop = the model finished normally; length = output limit reached)</small></td></tr>{% endif %}
+      {% if m.diagnostics_file %}<tr><th>Diagnostics</th><td><small>The model's reply looked unusual, so details were saved to {{ m.diagnostics_file }}</small></td></tr>{% endif %}
+      <tr><th>Elapsed</th><td>{{ m.elapsed_seconds }} s</td></tr>
+      <tr><th>Cost</th><td>{% if m.cost.amount is none %}unknown — {{ m.cost.note }}{% else %}{{ "%.6f"|format(m.cost.amount) }} {{ m.cost.currency }} — {{ m.cost.note }}{% endif %}</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Quality report</h2>
+    <p><small>Each area is reported separately. There is no single "ready" score, and the SEO list is an internal checklist, not a Google ranking score. Automated checks cannot guarantee rankings or factual accuracy.</small></p>
+
+    <h3>Completeness</h3>
+    {% if sec.completeness.complete %}<p class="ok">Looks complete (sections, FAQ and length checks).</p>
+    {% else %}<p class="fail">Incomplete: {{ sec.completeness.reasons|join(' ') }}</p>{% endif %}
+
+    {% for key, title in [('seo_structure', 'SEO structure'), ('keyword_use', 'Keyword use'), ('readability', 'Readability')] %}
+      <h3>{{ title }}</h3>
+      <ul>
+        {% for i in sec[key].failed %}<li class="fail">Failed: {{ i }}</li>{% endfor %}
+        {% for i in sec[key].warnings %}<li class="warn">Warning: {{ i }}</li>{% endfor %}
+        {% for i in sec[key].passed %}<li class="ok">Passed: {{ i }}</li>{% endfor %}
+      </ul>
+    {% endfor %}
+    <p><small>{{ s.score_text }}.{% if data.checks_rerun_at %} Checks re-run on the saved text at {{ data.checks_rerun_at }}.{% endif %}</small></p>
+    <form method="post" action="/articles/{{ slug }}/recheck"><button type="submit" class="secondary">Re-run automatic checks (free, no AI)</button></form>
+
+    <h3>Sources and facts</h3>
+    <p class="{{ 'warn' if sec.sources.state != 'links_reachable' else 'ok' }}">{{ sec.sources.summary }}</p>
+    {% if sec.sources.details %}
+    <table>
+      {% for d in sec.sources.details %}
+      <tr><td><a href="{{ d.url }}" rel="noopener noreferrer">{{ d.title or d.url }}</a><br><small>Claim: {{ d.claim or '—' }}</small></td>
+          <td>{{ 'reachable' if d.reachable else 'NOT reachable' }}{% if d.http_status %} (HTTP {{ d.http_status }}){% endif %}<br><small>{{ d.note }}</small></td></tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+    <p><small>{{ sec.sources.limits }}</small></p>
+    <form method="post" action="/articles/{{ slug }}/check-sources" onsubmit="this.querySelector('button').disabled=true;">
+      <button type="submit">Check source links (free, no AI)</button>
+    </form>
+
+    <h3>Human review required</h3>
+    <p>{{ sec.human_review.message }}</p>
+    {% if sec.human_review.flags %}<ul>{% for f in sec.human_review.flags %}<li>{{ f }}</li>{% endfor %}</ul>
+    {% else %}<p>No review flags were raised — that only means the automatic checks found nothing, not that the article is accurate.</p>{% endif %}
+    <p>{{ s.source_verification }}.</p>
+
+    <h3>Your decisions</h3>
+    {% if not can_approve %}
+      <p class="muted">Approvals are unavailable while there are consistency problems or the article is incomplete.</p>
+    {% else %}
+      {% if not data.approvals.get('export') %}
+      <form method="post" action="/articles/{{ slug }}/approve">
+        <input type="hidden" name="level" value="export">
+        <button type="submit">Approve this revision for export</button>
+      </form>
+      {% else %}
+        <p class="ok">Approved for export at {{ data.approvals.export.at }}.</p>
+        {% if not data.approvals.get('publication') %}
+        <form method="post" action="/articles/{{ slug }}/approve">
+          <input type="hidden" name="level" value="publication">
+          <label><input type="checkbox" name="confirm" value="yes"> I have personally checked the medical facts, exam details and sources in this revision.</label>
+          <button type="submit">Record: approved for publication by a human</button>
+        </form>
+        <p><small>This only records your decision. The app never publishes anything.</small></p>
+        {% else %}<p class="ok">Approved for publication by a human at {{ data.approvals.publication.at }}.</p>{% endif %}
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <h2>Article</h2>
+  {% for heading, body in a.sections %}
+  <div class="card">
+    <h3>{{ heading }}</h3>
+    <div class="article-body">{{ body|body_html }}</div>
+    <form method="post" action="/articles/{{ slug }}/revise" onsubmit="if(!confirm('Rewrite only this section? This sends ONE real API request and creates a new revision.')){return false;}this.querySelector('button').disabled=true;">
+      <input type="hidden" name="section" value="{{ loop.index0 }}">
+      <button type="submit" class="secondary">Rewrite this section (1 model call, new revision)</button>
+    </form>
+  </div>
+  {% endfor %}
+  <div class="card"><h3>Frequently Asked Questions</h3>
+    {% for q_, ans in a.faq %}<p><strong>{{ q_ }}</strong><br>{{ ans }}</p>{% endfor %}
+  </div>
+  {% if a.references %}
+  <div class="card"><h3>References (proposed by the model; not verified)</h3>
+    <ol>{% for r in a.references %}<li>{{ r.title }} — <a href="{{ r.url }}" rel="noopener noreferrer">{{ r.url }}</a></li>{% endfor %}</ol>
+  </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,5 @@
+line-length = 140
+extend-exclude = [".venv"]
+
+[lint]
+select = ["E", "F", "I"]

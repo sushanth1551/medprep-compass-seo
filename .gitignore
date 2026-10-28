@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Secrets: never commit these. Only .env.example (placeholders) is tracked.
+.env
+.env.*
+!.env.example
+
+# Generated content and measurements
+output/*
+!output/.gitkeep
+reports/runs/*
+reports/benchmarks/*
+
+reports/diagnostics/*

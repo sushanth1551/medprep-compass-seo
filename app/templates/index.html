@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}New draft — MedPrep Compass{% endblock %}
+{% block content %}
+<h1>Generate a draft</h1>
+
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if config_error %}
+  <p class="error">Provider not configured: {{ config_error }}</p>
+{% else %}
+  <p>Provider: <strong>{{ provider_id }}</strong> — {{ provider_name }}.
+  {% if provider_id != "mock" %}<strong>Generating sends one real API request that may cost money.</strong>{% else %}
+  Mock mode creates offline demo text only (no cost).{% endif %}</p>
+{% endif %}
+{% if limit_warning %}<p class="notice">{{ limit_warning }}</p>{% endif %}
+
+<form class="card" method="post" action="/generate" onsubmit="var b=this.querySelector('button');b.disabled=true;b.textContent='Generating… please wait (this can take up to a minute)';">
+  <label for="topic">Blog topic</label>
+  <input type="text" id="topic" name="topic" maxlength="120" required value="{{ form.topic }}">
+  <label for="keyword">Target SEO keyword (leave empty to reuse the topic)</label>
+  <input type="text" id="keyword" name="keyword" maxlength="120" value="{{ form.keyword }}">
+  <label for="length">Article length (a target, not a guarantee)</label>
+  <select id="length" name="length">
+    {% for name, label in lengths.items() %}
+    <option value="{{ name }}" {% if form.length == name %}selected{% endif %}>{{ name|capitalize }} ({{ label }})</option>
+    {% endfor %}
+  </select>
+  <p><button type="submit" {% if config_error %}disabled{% endif %}>Generate draft</button></p>
+  <p class="notice">Drafts need human review. Nothing is published, and facts and sources are not verified automatically.</p>
+</form>
+
+<h2>Previous drafts</h2>
+{% if articles %}
+<ul>
+  {% for a in articles %}
+  <li><a href="/articles/{{ a.slug }}">{{ a.title }}</a>
+    {% if a.revision and a.revision > 1 %}<small>(revision {{ a.revision }})</small>{% endif %}
+    {% if not a.full %}<small>(command-line draft)</small>{% endif %}</li>
+  {% endfor %}
+</ul>
+{% else %}<p>No drafts yet.</p>{% endif %}
+{% endblock %}
